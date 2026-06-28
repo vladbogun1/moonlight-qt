@@ -128,22 +128,6 @@ bool WMUtils::isRunningGamescope()
 #endif
 }
 
-bool WMUtils::isGpuSlow()
-{
-    bool ret;
-
-    if (!Utils::getEnvironmentVariableOverride("GL_IS_SLOW", &ret)) {
-#if defined(GL_IS_SLOW) || (!defined(Q_PROCESSOR_X86) && !defined(Q_OS_DARWIN) && !defined(Q_OS_WIN))
-        // We currently assume GPUs on non-x86 hardware are slow by default
-        ret = true;
-#else
-        ret = false;
-#endif
-    }
-
-    return ret;
-}
-
 QString WMUtils::getDrmCardOverride()
 {
 #ifdef HAVE_DRM
