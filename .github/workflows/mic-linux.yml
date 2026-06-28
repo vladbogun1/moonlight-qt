@@ -1,0 +1,55 @@
+name: mic-linux (appimage)
+
+# Builds a Linux AppImage of the mic-enabled Moonlight client for Steam Deck.
+on:
+  push:
+    branches: [feat/mic]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-base-private-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml-workerscript \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libsdl2-dev libsdl2-ttf-dev libopus-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libva-dev libvdpau-dev libdrm-dev libfreetype-dev libssl-dev \
+            libxkbcommon-dev libwayland-dev libpulse-dev libcec-dev \
+            wget fuse libfuse2 libxcb-cursor0
+
+      - name: Make qmake6 available as qmake
+        run: sudo ln -sf "$(which qmake6)" /usr/local/bin/qmake
+
+      - name: Fetch linuxdeployqt
+        run: |
+          wget -c -nv https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          chmod +x linuxdeployqt-continuous-x86_64.AppImage
+          sudo mv linuxdeployqt-continuous-x86_64.AppImage /usr/local/bin/linuxdeployqt
+
+      - name: Build AppImage
+        run: |
+          export QT_SELECT=qt6
+          chmod +x ./scripts/build-appimage.sh
+          ./scripts/build-appimage.sh
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-mic-AppImage
+          path: build/installer-release/*.AppImage
+          if-no-files-found: warn

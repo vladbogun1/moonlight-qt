@@ -556,7 +556,8 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
       m_AudioSampleCount(0),
-      m_DropAudioEndTime(0)
+      m_DropAudioEndTime(0),
+      m_MicCapture(nullptr)
 {
 }
 
@@ -609,6 +610,15 @@ bool Session::initialize()
                      "SDL_InitSubSystem(SDL_INIT_VIDEO) failed: %s",
                      SDL_GetError());
         return false;
+    }
+
+    // Suppress text input only under gamescope: SDL2-compat enables text input
+    // during SDL_INIT_VIDEO, which causes the Steam OSK to pop up via
+    // zwp_text_input_v3.enable() when the test window is created. In KDE desktop
+    // mode this call also breaks Qt's IM module, preventing OSK auto-show on
+    // text field focus.
+    if (WMUtils::isRunningGamescope()) {
+        SDL_StopTextInput();
     }
 
     LiInitializeStreamConfiguration(&m_StreamConfig);
@@ -1643,6 +1653,23 @@ bool Session::startConnectionAsync()
         return false;
     }
 
+    // Start mic capture if connection succeeded and user has enabled it
+    if (m_Preferences->micCapture) {
+        m_MicCapture = new MicCapture();
+        if (!m_Preferences->micDevice.isEmpty()) {
+            m_MicCapture->setDeviceName(m_Preferences->micDevice.toStdString());
+        }
+        if (m_Preferences->micBitrate > 0) {
+            m_MicCapture->setBitrate(m_Preferences->micBitrate);
+        }
+        if (!m_MicCapture->start()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Failed to start mic capture - continuing without mic");
+            delete m_MicCapture;
+            m_MicCapture = nullptr;
+        }
+    }
+
     emit connectionStarted();
     return true;
 }
@@ -1927,12 +1954,6 @@ void Session::execInternal()
         // X11/XWayland: Capture after decoder creation
         needsPostDecoderCreationCapture = true;
     }
-
-    // Stop text input. SDL enables it by default
-    // when we initialize the video subsystem, but this
-    // causes an IME popup when certain keys are held down
-    // on macOS.
-    SDL_StopTextInput();
 
     // Disable the screen saver if requested
     if (m_Preferences->keepAwake) {
@@ -2357,6 +2378,13 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+
+    // Stop mic capture before LiStopConnection() (called inside DeferredSessionCleanupTask)
+    if (m_MicCapture) {
+        m_MicCapture->stop();
+        delete m_MicCapture;
+        m_MicCapture = nullptr;
+    }
 
     // Cleanup can take a while, so dispatch it to a worker thread.
     // When it is complete, it will release our s_ActiveSessionSemaphore
